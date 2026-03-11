@@ -30,7 +30,21 @@ const RST = USE_COLOR ? "\x1b[0m" : "";
 const DIM = rgb(108, 112, 134);
 const TEXT = rgb(205, 214, 244);
 const GREEN = rgb(166, 227, 161);
+const YELLOW = rgb(249, 226, 175);
 const RED = rgb(243, 139, 168);
+
+const pcolor = (p) => (p < 50 ? GREEN : p < 90 ? YELLOW : RED);
+
+function ftok(n) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${Math.floor(n / 1000)}k`;
+  return String(n);
+}
+
+function makeBar(pct, width = 10) {
+  const filled = Math.min(width, Math.round(pct * width / 100));
+  return "▓".repeat(filled) + "░".repeat(width - filled);
+}
 
 // --- Helpers ---
 function loadJson(path) {
@@ -122,6 +136,13 @@ function main() {
     alchemyLines = [`${model}`];
   }
 
+  // Build context progress bar
+  const ctx = data.context_window || {};
+  const cs = ctx.context_window_size || 200000;
+  const cp = ctx.used_percentage || 0;
+  const ut = Math.floor((cs * cp) / 100);
+  const barStr = `${pcolor(cp)}${makeBar(cp)} ${Math.round(cp)}%${RST} ${DIM}${ftok(ut)}/${ftok(cs)}${RST}`;
+
   // Extract cost, duration, lines from data
   const cost = data.cost?.total_cost_usd || 0;
   const duration = data.cost?.total_duration_ms || 0;
@@ -137,16 +158,42 @@ function main() {
     `${GREEN}+${added}${RST} ${RED}-${removed}${RST}`,
   ].join(SEP);
 
-  // Append extra to first line of alchemy output
+  // Replace alchemy's plain "46k/200k" with progress bar version
+  // Alchemy context pattern: colored number + dim /number + reset (e.g. \x1b[...]46k\x1b[...]/200k\x1b[0m)
+  const stripAnsi = (s) => s.replace(/\x1b(?:\[[0-9;]*m|\]8;;[^\x07]*\x07)/g, "");
+
   if (alchemyLines.length > 0) {
-    // First line: alchemy info + extra
-    console.log(`${alchemyLines[0]}${SEP}${extra}`);
+    // Find and replace the context token segment (e.g. "46k/200k") in first line
+    let firstLine = alchemyLines[0];
+
+    // Split by separator to find the context segment
+    // Alchemy format: Model | Branch | 46k/200k | 5h ... | 7d ...
+    // We find the segment matching pattern like "XXk/YYYk" and replace it
+    const plainFirst = stripAnsi(firstLine);
+    const ctxMatch = plainFirst.match(/\d+[kM]\/\d+[kM]/);
+    if (ctxMatch) {
+      // Find the ANSI-encoded version of this segment and replace
+      // Split by the DIM separator "|"
+      const sepPattern = /(\s*\x1b\[[\d;]*m\|\x1b\[[\d;]*m\s*)/;
+      const segments = firstLine.split(sepPattern);
+      for (let i = 0; i < segments.length; i++) {
+        const plain = stripAnsi(segments[i]);
+        if (/^\d+[kM]\/\d+[kM]$/.test(plain.trim())) {
+          segments[i] = barStr;
+          break;
+        }
+      }
+      firstLine = segments.join("");
+    }
+
+    // First line: alchemy (with bar) + extra
+    console.log(`${firstLine}${SEP}${extra}`);
     // Rest: usage split line + last prompt (from alchemy)
     for (let i = 1; i < alchemyLines.length; i++) {
       console.log(alchemyLines[i]);
     }
   } else {
-    console.log(extra);
+    console.log(`${barStr}${SEP}${extra}`);
   }
 }
 
