@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 /**
- * Octo Premium Statusline for Claude Code v1.3.0
+ * Octo Premium Statusline for Claude Code v1.4.0
  * Cross-platform version for Windows (PowerShell/CMD) and WSL.
  * Features:
  * - 4-line dashboard with progress bars
  * - Daily and 7-day usage tracking
+ * - Last user prompt display
  * - Git commit message
  * - Session stats: Cost, Duration, Lines +/-
- * - **NEW**: Open Todos count (📝)
- * - **NEW**: Prompt Cache Efficiency (⚡ % Cache Hit Rate)
+ * - Open Todos count
+ * - Prompt Cache Efficiency
  */
 
 import { readFileSync, existsSync, readdirSync } from "fs";
@@ -78,15 +79,49 @@ function getClaudeMdCount(cwd) {
 
 function getLastCommit(cwd) {
   try {
-    const out = execFileSync("git", ["log", "-1", "--pretty=%s"], { 
-        cwd, 
-        encoding: "utf8", 
+    const out = execFileSync("git", ["log", "-1", "--pretty=%s"], {
+        cwd,
+        encoding: "utf8",
         timeout: 1000,
         stdio: ["ignore", "pipe", "ignore"],
         ...(IS_WIN ? { windowsHide: true } : {})
     });
     return out.trim() || "no commits";
-  } catch { return "not a git repo"; }
+  } catch { return ""; }
+}
+
+function getLastPrompt(transcriptPath) {
+  try {
+    if (!transcriptPath || !existsSync(transcriptPath)) return "";
+    const content = readFileSync(transcriptPath, "utf8").trim();
+    const lines = content.split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const obj = JSON.parse(lines[i]);
+        if (obj.type === "user") {
+          const c = obj.message?.content;
+          if (typeof c === "string") return c;
+          if (Array.isArray(c)) {
+            for (const item of c) {
+              if (typeof item === "string") return item;
+              if (item.type === "text" && item.text) return item.text;
+            }
+          }
+        }
+      } catch {}
+    }
+  } catch {}
+  return "";
+}
+
+function findGitCwd(data) {
+  const primary = data.workspace?.current_dir || data.cwd || process.cwd();
+  if (getLastCommit(primary)) return primary;
+  const added = data.workspace?.added_dirs || [];
+  for (const d of added) {
+    if (existsSync(d) && getLastCommit(d)) return d;
+  }
+  return primary;
 }
 
 function pcolor_simple(p) {
@@ -111,16 +146,18 @@ function main() {
   const ut = Math.floor((cs * cp) / 100);
 
   const rl = data.rate_limits || {};
-  const rl5 = rl["5_hour"] || { used_percentage: 0, resets_at: null };
-  const rl7 = rl["7_day"] || { used_percentage: 0, resets_at: null };
+  const rl5 = rl["five_hour"] || rl["5_hour"] || { used_percentage: 0, resets_at: null };
+  const rl7 = rl["seven_day"] || rl["7_day"] || { used_percentage: 0, resets_at: null };
   const rlp5 = rl5.used_percentage || 0;
   const rlp7 = rl7.used_percentage || 0;
 
-  const t5 = rl5.resets_at ? formatDuration(Math.max(0, new Date(rl5.resets_at).getTime() - Date.now())) : "0m";
-  const t7 = rl7.resets_at ? formatDuration(Math.max(0, new Date(rl7.resets_at).getTime() - Date.now())) : "0m";
+  // resets_at can be seconds (unix) or ms — normalize to ms
+  const toMs = (t) => t && t < 1e12 ? t * 1000 : t;
+  const t5 = rl5.resets_at ? formatDuration(Math.max(0, toMs(rl5.resets_at) - Date.now())) : "0m";
+  const t7 = rl7.resets_at ? formatDuration(Math.max(0, toMs(rl7.resets_at) - Date.now())) : "0m";
 
   // --- Summary Lines ---
-  
+
   // Line 1: Daily Usage
   const line1 = [
     `🎧  ${TEXT}Daily Usage ${RST}`,
@@ -135,19 +172,24 @@ function main() {
     `${TEXT}Sn  ${makeBar(rlp5, 10, GREEN_DIM, GREEN_BG)} ${pcolor_simple(rlp5)}${Math.round(rlp5)}%${RST} ${DIM}(${t5})${RST}`
   ].join(separator);
 
-  // Line 3: Codex & Git
-  const cwd = data.workspace?.current_dir || process.cwd();
+  // Line 3: Last Prompt & Git
+  const cwd = findGitCwd(data);
   const lastCommit = getLastCommit(cwd);
+  const lastPrompt = getLastPrompt(data.transcript_path);
+  const promptDisplay = lastPrompt
+    ? lastPrompt.replace(/\n/g, " ").substring(0, 60) + (lastPrompt.length > 60 ? "…" : "")
+    : "no prompt";
+  const gitDisplay = lastCommit || "no git";
   const line3 = [
-    `🔧  ${TEXT}Codex-5.4xh ${RST}${DIM}no data${RST}`,
-    `  ${PURPLE}${lastCommit}${RST}`
+    `💬  ${MAUVE}${promptDisplay}${RST}`,
+    `${PURPLE}${gitDisplay}${RST}`
   ].join(separator);
 
   // Row 4: Model & Project + Session Stats + New Productivity Stats
   const model = data.model || {};
   let modelName = (model.display_name || model.id || "?").replace("Claude ", "");
   if (modelName === "opus-20240229") modelName = "Opus 4.6";
-  
+
   const mcpCount = Object.keys(data.mcp_servers || {}).length;
   const hooksCount = Object.keys(data.hooks || {}).reduce((acc, k) => acc + (data.hooks[k]?.length || 0), 0);
   const claudeMdCount = getClaudeMdCount(cwd);
@@ -158,13 +200,13 @@ function main() {
   const added = data.cost?.total_lines_added || 0;
   const removed = data.cost?.total_lines_removed || 0;
 
-  // New: Cache Efficiency
+  // Cache Efficiency
   const inputToks = data.cost?.total_input_tokens || 0;
   const cacheRead = data.cost?.total_cache_read_input_tokens || 0;
   const totalIn = inputToks + cacheRead;
   const cacheRate = totalIn > 0 ? Math.round((cacheRead / totalIn) * 100) : 0;
 
-  // New: Todos count
+  // Todos count
   const openTodos = (data.todos || []).length;
 
   const line4 = [
