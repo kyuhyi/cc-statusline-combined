@@ -1,27 +1,49 @@
-# CC Statusline Combined
+# CC Statusline Combined — Premium Dashboard v1.3.0
 
-Claude Code 하단 스테이터스라인에 **API 사용량 + 세션 정보**를 한눈에 보여주는 통합 스크립트입니다.
+Claude Code 하단 스테이터스라인에 **API 사용량 + 세션 정보**를 한눈에 보여주는 **4줄 프리미엄 대시보드** 스크립트입니다.
+Windows (PowerShell/CMD) 및 WSL 모두 지원합니다.
 
 ![statusline-preview](https://github.com/user-attachments/assets/statusline-preview.png)
 
 ```
-Opus 4.6 | main* | ▓▓░░░░░░░░ 23% 46k/200k | 5h 7% (2h36m) | 7d 33% (1d4h) | $1.45 | ⏱12m30s | +42 -8
-▸ 마지막에 입력한 프롬프트
+🎧  Daily Usage  | Ctx ██████░░░░ 60% (600k/1M) | 5h  ████░░░░░░ 40% (2h 30m)
+📅  7days Usage  | All ██░░░░░░░░ 20% (3d 12h)   | Sn  ████░░░░░░ 40% (2h 30m)
+🔧  Codex-5.4xh no data | feat: add statusline
+
+🚀  Opus 4.6·md | 3 CLAUDE.md | 6 MCP | 2 Hooks | $1.25 | ⏱ 15m 30s | +120 -45 | ⚡ 78% Cache | 📝 3 Todos
 ```
+
+## v1.3.0 새 기능
+
+- 4줄 프리미엄 대시보드 레이아웃 (컬러 프로그레스 바)
+- 프롬프트 캐시 효율(⚡ Cache Hit Rate %) 표시
+- 열린 Todo 개수(📝) 표시
+- CLAUDE.md / MCP 서버 / Hooks 카운트
+- Windows Terminal TrueColor 자동 감지
 
 ## 표시 항목
 
+| 줄 | 항목 | 설명 |
+|----|------|------|
+| 1 | Daily Usage | 컨텍스트 윈도우 사용률 + 5시간 Rate Limit |
+| 2 | 7days Usage | 7일 전체 사용률 + 세션 사용률 |
+| 3 | Codex + Git | Codex 정보 + 마지막 Git 커밋 메시지 |
+| 4 | Session Info | 모델, CLAUDE.md 수, MCP, Hooks, 비용, 시간, 라인 변경, 캐시율, Todos |
+
+### 세부 항목
+
 | 항목 | 예시 | 설명 |
 |------|------|------|
-| 모델 | `Opus 4.6` | 현재 사용 중인 모델 |
-| Git 브랜치 | `main*` | 현재 브랜치 (`*` = 변경사항 있음, 클릭 시 GitHub 이동) |
-| 컨텍스트 | `▓▓░░░░░░░░ 23% 46k/200k` | 프로그레스 바 + 컨텍스트 윈도우 사용량 (초록→노랑→빨강) |
-| 5시간 사용률 | `5h 7% (2h36m)` | 5시간 기준 API 사용률 + 리셋까지 남은 시간 |
-| 7일 사용률 | `7d 33% (1d4h)` | 7일 기준 API 사용률 + 리셋까지 남은 시간 |
-| 세션 비용 | `$1.45` | 현재 세션에서 사용한 비용 (USD) |
-| 경과 시간 | `⏱12m30s` | 세션 시작 후 경과 시간 |
-| 코드 변경 | `+42 -8` | 추가/삭제된 코드 라인 수 |
-| 마지막 프롬프트 | `▸ 로그인 기능 만들어줘` | 직전에 입력한 프롬프트 |
+| 모델 | `Opus 4.6·md` | 현재 사용 중인 모델 |
+| 컨텍스트 | `Ctx ██████░░░░ 60%` | 프로그레스 바 + 컨텍스트 윈도우 사용량 (초록→노랑→빨강) |
+| 5시간 사용률 | `5h ████░░░░░░ 40%` | 5시간 기준 API 사용률 + 리셋까지 남은 시간 |
+| 7일 사용률 | `All ██░░░░░░░░ 20%` | 7일 기준 API 사용률 + 리셋까지 남은 시간 |
+| 세션 비용 | `$1.25` | 현재 세션에서 사용한 비용 (USD) |
+| 경과 시간 | `⏱ 15m 30s` | 세션 시작 후 경과 시간 |
+| 코드 변경 | `+120 -45` | 추가/삭제된 코드 라인 수 |
+| 캐시 효율 | `⚡ 78% Cache` | 프롬프트 캐시 히트율 |
+| Todos | `📝 3 Todos` | 열린 Todo 항목 수 |
+| Git 커밋 | `feat: add statusline` | 마지막 Git 커밋 메시지 |
 
 ## 설치
 
@@ -159,6 +181,23 @@ npx -y cc-alchemy-statusline
 ├── statusline_cache.json        # API 응답 캐시 (5분 TTL)
 └── settings.json                # Claude Code 설정 (statusLine 항목)
 ```
+
+## 사용법 (Premium v1.3.0)
+
+1. 이 저장소의 `statusline-combined.mjs`를 다운로드하여 Claude 설정 폴더에 넣습니다.
+   - **Windows**: `C:\Users\<사용자>\.claude\`
+   - **WSL/Linux**: `~/.claude/`
+2. Claude Code의 `settings.json`을 열어 `statusLine` 항목을 다음과 같이 수정합니다:
+   ```json
+   {
+     "statusLine": {
+       "type": "command",
+       "command": "node ~/.claude/statusline-combined.mjs"
+     }
+   }
+   ```
+   - WSL 기준 경로입니다. Windows의 경우 `node %USERPROFILE%\.claude\statusline-combined.mjs`를 사용하세요.
+3. Claude Code를 재시작하면 4줄의 미려한 대시보드가 나타납니다.
 
 ## Credits
 
